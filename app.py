@@ -10,10 +10,12 @@ st.title("📄 Procesador de Pólizas en PDF")
 # Subida de archivos PDF
 uploaded_files = st.file_uploader("Sube tus archivos PDF", type="pdf", accept_multiple_files=True)
 
-# Función para extraer la placa desde una línea de texto
+# Función para extraer la placa desde la columna "Ítem"
 def extraer_placa_desde_item(item):
-    match = re.search(r"PLACA: \s*([A-Z0-9]+)", item)
-    return match.group(1) if match else ""
+    if isinstance(item, str):
+        match = re.search(r"PLACA:\s*([A-Z0-9]+)", item)
+        return match.group(1) if match else ""
+    return ""
 
 if uploaded_files:
     all_rows = []
@@ -75,9 +77,8 @@ if uploaded_files:
     # Extraer la placa desde la columna "Ítem"
     df["Placa"] = df["Ítem"].apply(extraer_placa_desde_item)
 
+    # Mostrar tabla en Streamlit
     st.success("✅ Archivos procesados correctamente")
-
-    # Mostrar tabla
     st.dataframe(df)
 
     # Guardar Excel en memoria
@@ -93,4 +94,3 @@ if uploaded_files:
         file_name="Renovaciones_Procesadas.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
