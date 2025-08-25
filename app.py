@@ -76,12 +76,10 @@ if uploaded_files:
     df.to_excel(output, index=False, engine="openpyxl")
     output.seek(0)
 
-    
     # Botón de descarga
     st.download_button(
         label="⬇️ Descargar Excel",
-        data=output,  # Aquí usas el objeto BytesIO ya preparado
+        data=output,
         file_name="Renovaciones_Procesadas.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
