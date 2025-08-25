@@ -1,96 +1,93 @@
 import os
 import re
-import io
 import pdfplumber
 import pandas as pd
 import streamlit as st
 
+# -------------------------------
+# CONFIGURACIÓN DE LA APP
+# -------------------------------
+st.set_page_config(page_title="Procesador de Pólizas", page_icon="📄", layout="wide")
+
 st.title("📄 Procesador de Pólizas en PDF")
+st.markdown("Sube tus pólizas en formato PDF y obtén un **Excel procesado automáticamente**.")
+st.divider()
 
-# Subida de archivos PDF
-uploaded_files = st.file_uploader("Sube tus archivos PDF", type="pdf", accept_multiple_files=True)
-
-# Función para extraer la placa desde la columna "Ítem"
-def extraer_placa_desde_item(item):
-    if isinstance(item, str):
-        match = re.search(r"PLACA:\s*([A-Z0-9]+)", item)
-        return match.group(1) if match else ""
-    return ""
+# -------------------------------
+# SUBIDA DE ARCHIVOS
+# -------------------------------
+uploaded_files = st.file_uploader("📂 Sube tus PDFs aquí", type="pdf", accept_multiple_files=True)
 
 if uploaded_files:
     all_rows = []
 
     for uploaded_file in uploaded_files:
-        # Leer PDF en memoria
         with pdfplumber.open(uploaded_file) as pdf:
-            text = "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
+            text = ""
+            for page in pdf.pages:
+                text += page.extract_text() + "\n"
 
-        # Extraer datos generales
-        poliza = re.search(r"Póliza\s+(\d+)", text)
-        cliente = re.search(r"Cliente\s+([A-Z ,]+)", text)
-        vigencia = re.search(r"Vigencia\s+(\d{2}/\d{2}/\d{4} - \d{2}/\d{2}/\d{4})", text)
+            # Buscar con expresiones regulares
+            poliza = re.search(r"Póliza\s*:\s*(\S+)", text)
+            cliente = re.search(r"Cliente\s*:\s*(.+)", text)
+            placa = re.search(r"Placa\s*:\s*(\S+)", text)
 
-        nro_poliza = poliza.group(1) if poliza else "SIN_POLIZA"
-        nombre_cliente = cliente.group(1).strip() if cliente else "SIN_CLIENTE"
-        rango_vigencia = vigencia.group(1) if vigencia else "SIN_VIGENCIA"
+            all_rows.append({
+                "Archivo": uploaded_file.name,
+                "Póliza": poliza.group(1) if poliza else "No encontrado",
+                "Cliente": cliente.group(1) if cliente else "No encontrado",
+                "Placa": placa.group(1) if placa else "No encontrado"
+            })
 
-        # Buscar secciones
-        seccion_pattern = re.compile(r"SECCION: \d{3} [A-Z ]+")
-        secciones = seccion_pattern.findall(text)
+    # -------------------------------
+    # CREAR DATAFRAME
+    # -------------------------------
+    df = pd.DataFrame(all_rows)
 
-        # Dividir texto por secciones
-        seccion_data = {}
-        for i, sec in enumerate(secciones):
-            start = text.find(sec)
-            end = text.find(secciones[i+1]) if i+1 < len(secciones) else len(text)
-            seccion_data[sec] = text[start:end]
+    # -------------------------------
+    # MOSTRAR MÉTRICAS
+    # -------------------------------
+    st.subheader("📊 Resumen")
+    col1, col2, col3 = st.columns(3)
 
-        # Extraer ítems con valor asegurado y prima neta
-        for sec, content in seccion_data.items():
-            lines = content.split("\n")
-            for i in range(len(lines)):
-                line = lines[i].strip()
-                match = re.match(
-                    r"^(\d+\.|[A-Z]\.)\s+(.*?)(\d{1,3}(?:,\d{3})*(?:\.\d{2}))\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2}))$",
-                    line
-                )
-                if match:
-                    item_desc = match.group(2).strip()
-                    valor = match.group(3)
-                    prima = match.group(4)
-                    all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_desc, valor, prima])
-                else:
-                    if re.match(r"^(\d+\.|[A-Z]\.)\s+", line):
-                        item_desc = line
-                        valor = ""
-                        prima = ""
-                        for j in range(i+1, min(i+5, len(lines))):
-                            nums = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", lines[j])
-                            if len(nums) >= 2:
-                                valor, prima = nums[0], nums[1]
-                                break
-                        all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_desc, valor, prima])
+    with col1:
+        st.metric("Pólizas procesadas", len(df["Póliza"].unique()))
+    with col2:
+        st.metric("Clientes encontrados", len(df["Cliente"].unique()))
+    with col3:
+        st.metric("Placas detectadas", df["Placa"].ne("No encontrado").sum())
 
-    # Crear DataFrame
-    df = pd.DataFrame(all_rows, columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Valor Asegurado", "Prima Neta"])
+    st.divider()
 
-    # Extraer la placa desde la columna "Ítem"
-    df["Placa"] = df["Ítem"].apply(extraer_placa_desde_item)
+    # -------------------------------
+    # PESTAÑAS DE VISUALIZACIÓN
+    # -------------------------------
+    tab1, tab2 = st.tabs(["📑 Tabla de datos", "📈 Análisis"])
 
-    # Mostrar tabla en Streamlit
+    with tab1:
+        st.dataframe(df, use_container_width=True, height=500)
+
+    with tab2:
+        st.bar_chart(df["Cliente"].value_counts(), use_container_width=True)
+
+    # -------------------------------
+    # DESCARGA DE RESULTADOS
+    # -------------------------------
+    st.divider()
     st.success("✅ Archivos procesados correctamente")
-    st.dataframe(df)
 
-    # Guardar Excel en memoria
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False)
-    output.seek(0)
+    @st.cache_data
+    def convertir_excel(df):
+        return df.to_excel(index=False, engine="openpyxl")
 
-    # Botón de descarga
+    excel_bytes = convertir_excel(df)
+
     st.download_button(
         label="⬇️ Descargar Excel",
-        data=output,
-        file_name="Renovaciones_Procesadas.xlsx",
+        data=excel_bytes,
+        file_name="polizas_procesadas.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+else:
+    st.info("📌 Sube al menos un archivo PDF para comenzar")
