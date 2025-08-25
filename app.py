@@ -73,7 +73,8 @@ if uploaded_files:
 
     # Guardar Excel en memoria
     output = io.BytesIO()
-    df.to_excel(output, index=False, engine="openpyxl")
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False)
     output.seek(0)
 
     # Botón de descarga
