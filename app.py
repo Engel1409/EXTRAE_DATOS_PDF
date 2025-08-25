@@ -12,7 +12,7 @@ uploaded_files = st.file_uploader("Sube tus archivos PDF", type="pdf", accept_mu
 
 # Función para extraer la placa desde una línea de texto
 def extraer_placa(texto):
-    match = re.search(r"PLACA:\s*([A-Z0-9]+)", texto)
+    match = re.search(r"PLACA: \s*([A-Z0-9]+)", texto)
     return match.group(1) if match else ""
 
 if uploaded_files:
