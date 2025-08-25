@@ -1,5 +1,6 @@
 import os
 import re
+import io
 import pdfplumber
 import pandas as pd
 import streamlit as st
@@ -13,7 +14,7 @@ if uploaded_files:
     all_rows = []
 
     for uploaded_file in uploaded_files:
-        # Guardar PDF en memoria temporal
+        # Leer PDF en memoria
         with pdfplumber.open(uploaded_file) as pdf:
             text = "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
 
@@ -70,10 +71,16 @@ if uploaded_files:
     # Mostrar tabla
     st.dataframe(df)
 
-    # Descargar Excel
+    # Guardar Excel en memoria
+    output = io.BytesIO()
+    df.to_excel(output, index=False, engine="openpyxl")
+    output.seek(0)
+
+    # Botón de descarga
     st.download_button(
         label="⬇️ Descargar Excel",
-        data=df.to_excel(index=False, engine="openpyxl"),
+        data=output,
         file_name="Renovaciones_Procesadas.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
