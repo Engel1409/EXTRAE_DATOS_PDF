@@ -11,8 +11,8 @@ st.title("📄 Procesador de Pólizas en PDF")
 uploaded_files = st.file_uploader("Sube tus archivos PDF", type="pdf", accept_multiple_files=True)
 
 # Función para extraer la placa desde una línea de texto
-def extraer_placa(texto):
-    match = re.search(r"PLACA: \s*([A-Z0-9]+)", texto)
+def extraer_placa_desde_item(item):
+    match = re.search(r"PLACA:\s*([A-Z0-9]+)", item)
     return match.group(1) if match else ""
 
 if uploaded_files:
@@ -43,12 +43,11 @@ if uploaded_files:
             end = text.find(secciones[i+1]) if i+1 < len(secciones) else len(text)
             seccion_data[sec] = text[start:end]
 
-        # Extraer ítems con valor asegurado, prima neta y placa
+        # Extraer ítems con valor asegurado y prima neta
         for sec, content in seccion_data.items():
             lines = content.split("\n")
             for i in range(len(lines)):
                 line = lines[i].strip()
-                placa = extraer_placa(line)
                 match = re.match(
                     r"^(\d+\.|[A-Z]\.)\s+(.*?)(\d{1,3}(?:,\d{3})*(?:\.\d{2}))\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2}))$",
                     line
@@ -57,7 +56,7 @@ if uploaded_files:
                     item_desc = match.group(2).strip()
                     valor = match.group(3)
                     prima = match.group(4)
-                    all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_desc, valor, prima, placa])
+                    all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_desc, valor, prima])
                 else:
                     if re.match(r"^(\d+\.|[A-Z]\.)\s+", line):
                         item_desc = line
@@ -68,18 +67,15 @@ if uploaded_files:
                             if len(nums) >= 2:
                                 valor, prima = nums[0], nums[1]
                                 break
-                        all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_desc, valor, prima, placa])
+                        all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_desc, valor, prima])
 
-    # Crear DataFrame y mostrar en Streamlit
-    df = pd.DataFrame(all_rows, columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Valor Asegurado", "Prima Neta", "Placa"])
-    st.success("✅ Archivos procesados correctamente")
+    # Crear DataFrame
+    df = pd.DataFrame(all_rows, columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Valor Asegurado", "Prima Neta"])
 
     # Extraer la placa desde la columna "Ítem"
-    def extraer_placa_desde_item(item):
-        match = re.search(r"PLACA:\s*([A-Z0-9]+)", item)
-        return match.group(1) if match else ""
-
     df["Placa"] = df["Ítem"].apply(extraer_placa_desde_item)
+
+    st.success("✅ Archivos procesados correctamente")
 
     # Mostrar tabla
     st.dataframe(df)
@@ -97,3 +93,4 @@ if uploaded_files:
         file_name="Renovaciones_Procesadas.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
