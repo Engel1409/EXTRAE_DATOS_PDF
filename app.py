@@ -74,6 +74,13 @@ if uploaded_files:
     df = pd.DataFrame(all_rows, columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Valor Asegurado", "Prima Neta", "Placa"])
     st.success("✅ Archivos procesados correctamente")
 
+    # Extraer la placa desde la columna "Ítem"
+    def extraer_placa_desde_item(item):
+        match = re.search(r"PLACA:\s*([A-Z0-9]+)", item)
+        return match.group(1) if match else ""
+
+    df["Placa"] = df["Ítem"].apply(extraer_placa_desde_item)
+
     # Mostrar tabla
     st.dataframe(df)
 
