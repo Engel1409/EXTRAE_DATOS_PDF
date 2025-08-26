@@ -5,9 +5,6 @@ import pdfplumber
 import pandas as pd
 import streamlit as st
 
-if st.button("🔄 Refrescar página"):
-    st.experimental_rerun()
-
 st.title("📄 POLIDATA")
 
 # --- Estilos personalizados ---
