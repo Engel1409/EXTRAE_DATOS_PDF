@@ -5,44 +5,36 @@ import pdfplumber
 import pandas as pd
 import streamlit as st
 
+st.set_page_config(page_title="📄 POLIDATA", layout="wide")
 
-st.title("📄 POLIDATA")
-
-# --- Estilos personalizados ---
+# --- Estilos generales ---
 st.markdown("""
     <style>
+    /* Fondo general y fuente */
     .stApp {
         background-color: #f6f8fa;
         font-family: 'Segoe UI', Arial, sans-serif;
     }
+    /* Título */
     h1 {
         color: #0a3d62;
     }
-    .stMetric {
-        background: #dff9fb !important;
+    /* Contenedor de métricas */
+    .metric-card {
+        background: #dff9fb;
         border-radius: 10px;
-        padding: 5px;
+        padding: 10px;
         text-align: center;
-    }
-    .stDataFrame {
-        background: #f1f2f6;
-        border-radius: 8px;
-    }
-    button, .stDownloadButton {
-        background-color: #DA291C !important;
-        color: white !important;
-        border-radius: 8px !important;
-        font-weight: bold;
     }
     </style>
 """, unsafe_allow_html=True)
-# ...existing code...
 
-# Subida de archivos PDF
-st.markdown("**Arrastra y suelta tus archivos PDF aquí o haz clic en 'Browse files' para seleccionarlos.**")
+st.markdown("## 📄 POLIDATA")
+
+# --- Subida de archivos PDF ---
+st.markdown("**Arrastra y suelta tus archivos PDF o haz clic en 'Browse files'.**")
 uploaded_files = st.file_uploader("Sube tus archivos PDF", type="pdf", accept_multiple_files=True)
 
-# Función para extraer la placa desde la columna "Ítem"
 def extraer_placa_desde_item(item):
     if isinstance(item, str):
         match = re.search(r"PLACA:\s*([A-Z0-9]+)", item)
@@ -53,11 +45,9 @@ if uploaded_files:
     all_rows = []
 
     for uploaded_file in uploaded_files:
-        # Leer PDF en memoria
         with pdfplumber.open(uploaded_file) as pdf:
             text = "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
 
-        # Extraer datos generales
         poliza = re.search(r"Póliza\s+(\d+)", text)
         cliente = re.search(r"Cliente\s+([A-Z ,]+)", text)
         vigencia = re.search(r"Vigencia\s+(\d{2}/\d{2}/\d{4} - \d{2}/\d{2}/\d{4})", text)
@@ -66,18 +56,14 @@ if uploaded_files:
         nombre_cliente = cliente.group(1).strip() if cliente else "SIN_CLIENTE"
         rango_vigencia = vigencia.group(1) if vigencia else "SIN_VIGENCIA"
 
-        # Buscar secciones
         seccion_pattern = re.compile(r"SECCION: \d{3} [A-Z ]+")
         secciones = seccion_pattern.findall(text)
-
-        # Dividir texto por secciones
         seccion_data = {}
         for i, sec in enumerate(secciones):
             start = text.find(sec)
             end = text.find(secciones[i+1]) if i+1 < len(secciones) else len(text)
             seccion_data[sec] = text[start:end]
 
-        # Extraer ítems con valor asegurado y prima neta
         for sec, content in seccion_data.items():
             lines = content.split("\n")
             for i in range(len(lines)):
@@ -103,47 +89,41 @@ if uploaded_files:
                                 break
                         all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_desc, valor, prima])
 
-    # Crear DataFrame
     df = pd.DataFrame(
         all_rows,
         columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Valor Asegurado", "Prima Neta"]
     )
-   
 
-    # Extraer la placa desde la columna "Ítem"
     df["Placa"] = df["Ítem"].apply(extraer_placa_desde_item)
 
-    
-
-    # --- Tarjetas (Pólizas únicas + totales en USD) ---
-    # No cambiamos las columnas originales; solo convertimos para el cálculo
+    # --- Tarjetas métricas ---
     total_prima = pd.to_numeric(df["Prima Neta"].astype(str).str.replace(",", "", regex=True), errors="coerce").sum()
     total_valor = pd.to_numeric(df["Valor Asegurado"].astype(str).str.replace(",", "", regex=True), errors="coerce").sum()
     polizas_unicas = df["Póliza"].nunique()
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("🛡️ Cantidad Pólizas Grupo", polizas_unicas)
-    # c2.metric("💵 Prima Total (USD)", f"${total_prima:,.2f}")
-    # c3.metric("🏦 Valor Asegurado Total (USD)", f"${total_valor:,.2f}")
-   
+    c1.markdown(f'<div class="metric-card">🛡️<br>Polizas: {polizas_unicas}</div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="metric-card">💵<br>Prima Total: ${total_prima:,.2f}</div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="metric-card">🏦<br>Valor Total: ${total_valor:,.2f}</div>', unsafe_allow_html=True)
 
-    # Mostrar tabla en Streamlit (solo 10 registros)
+    # --- Mostrar tabla ---
     st.success("✅ Archivos procesados correctamente")
-    st.dataframe(df.head(10))
+    st.dataframe(df.head(10).style.set_properties(**{
+        'background-color': '#f1f2f6',
+        'border-radius': '8px',
+        'padding': '3px'
+    }))
 
-    # Guardar Excel en memoria (todos los registros)
+    # --- Botón de descarga ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False)
     output.seek(0)
 
-    # Botón de descarga
-    st.download_button(
-        label="⬇️ Descargar Excel",
-        data=output,
-        file_name="Renovaciones_Procesadas.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-
-    
+    st.markdown(f"""
+        <a href="data:application/octet-stream;base64,{output.getvalue().hex()}" 
+           download="Renovaciones_Procesadas.xlsx"
+           style="display:inline-block;padding:0.5em 1em;background-color:#DA291C;color:white;border-radius:8px;font-weight:bold;text-decoration:none;">
+           ⬇️ Descargar Excel
+        </a>
+    """, unsafe_allow_html=True)
