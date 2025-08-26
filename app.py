@@ -5,9 +5,43 @@ import pdfplumber
 import pandas as pd
 import streamlit as st
 
-st.title("📄 Procesador de Pólizas en PDF")
+if st.button("🔄 Refrescar página"):
+    st.experimental_rerun()
+
+st.title("📄 POLIDATA")
+
+# --- Estilos personalizados ---
+st.markdown("""
+    <style>
+    .stApp {
+        background-color: #f6f8fa;
+        font-family: 'Segoe UI', Arial, sans-serif;
+    }
+    h1 {
+        color: #0a3d62;
+    }
+    .stMetric {
+        background: #dff9fb !important;
+        border-radius: 10px;
+        padding: 5px;
+        text-align: center;
+    }
+    .stDataFrame {
+        background: #f1f2f6;
+        border-radius: 8px;
+    }
+    button, .stDownloadButton {
+        background-color: #DA291C !important;
+        color: white !important;
+        border-radius: 8px !important;
+        font-weight: bold;
+    }
+    </style>
+""", unsafe_allow_html=True)
+# ...existing code...
 
 # Subida de archivos PDF
+st.markdown("**Arrastra y suelta tus archivos PDF aquí o haz clic en 'Browse files' para seleccionarlos.**")
 uploaded_files = st.file_uploader("Sube tus archivos PDF", type="pdf", accept_multiple_files=True)
 
 # Función para extraer la placa desde la columna "Ítem"
@@ -76,9 +110,12 @@ if uploaded_files:
         all_rows,
         columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Valor Asegurado", "Prima Neta"]
     )
+   
 
     # Extraer la placa desde la columna "Ítem"
     df["Placa"] = df["Ítem"].apply(extraer_placa_desde_item)
+
+    
 
     # --- Tarjetas (Pólizas únicas + totales en USD) ---
     # No cambiamos las columnas originales; solo convertimos para el cálculo
@@ -87,9 +124,10 @@ if uploaded_files:
     polizas_unicas = df["Póliza"].nunique()
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("🛡️ Pólizas únicas", polizas_unicas)
-    c2.metric("💵 Prima Total (USD)", f"${total_prima:,.2f}")
-    c3.metric("🏦 Valor Asegurado Total (USD)", f"${total_valor:,.2f}")
+    c1.metric("🛡️ Cantidad Pólizas Grupo", polizas_unicas)
+    # c2.metric("💵 Prima Total (USD)", f"${total_prima:,.2f}")
+    # c3.metric("🏦 Valor Asegurado Total (USD)", f"${total_valor:,.2f}")
+   
 
     # Mostrar tabla en Streamlit (solo 10 registros)
     st.success("✅ Archivos procesados correctamente")
@@ -108,3 +146,4 @@ if uploaded_files:
         file_name="Renovaciones_Procesadas.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+    
