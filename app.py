@@ -4,6 +4,7 @@ import io
 import pdfplumber
 import pandas as pd
 import streamlit as st
+import base64
 
 st.set_page_config(page_title="📄 POLIDATA", layout="wide")
 
@@ -116,14 +117,4 @@ if uploaded_files:
 
     # --- Botón de descarga ---
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False)
-    output.seek(0)
-
-    st.markdown(f"""
-        <a href="data:application/octet-stream;base64,{output.getvalue().hex()}" 
-           download="Renovaciones_Procesadas.xlsx"
-           style="display:inline-block;padding:0.5em 1em;background-color:#DA291C;color:white;border-radius:8px;font-weight:bold;text-decoration:none;">
-           ⬇️ Descargar Excel
-        </a>
-    """, unsafe_allow_html=True)
+    with pd.ExcelWriter(outpu
