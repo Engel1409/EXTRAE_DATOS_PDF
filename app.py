@@ -72,27 +72,30 @@ if uploaded_files:
                         all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_desc, valor, prima])
 
     # Crear DataFrame
-    df = pd.DataFrame(all_rows, columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Valor Asegurado", "Prima Neta"])
+    df = pd.DataFrame(
+        all_rows,
+        columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Valor Asegurado", "Prima Neta"]
+    )
 
     # Extraer la placa desde la columna "Ítem"
     df["Placa"] = df["Ítem"].apply(extraer_placa_desde_item)
 
-    # Convertir valores numéricos
-    df["Valor Asegurado"] = df["Valor Asegurado"].str.replace(",", "").astype(float, errors="ignore")
-    df["Prima Neta"] = df["Prima Neta"].str.replace(",", "").astype(float, errors="ignore")
+    # --- Tarjetas (Pólizas únicas + totales en USD) ---
+    # No cambiamos las columnas originales; solo convertimos para el cálculo
+    total_prima = pd.to_numeric(df["Prima Neta"].astype(str).str.replace(",", "", regex=True), errors="coerce").sum()
+    total_valor = pd.to_numeric(df["Valor Asegurado"].astype(str).str.replace(",", "", regex=True), errors="coerce").sum()
+    polizas_unicas = df["Póliza"].nunique()
 
-    # Mostrar métricas (solo prima y valor asegurado en USD)
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("💵 Prima Total (USD)", f"${df['Prima Neta'].sum():,.2f}")
-    with col2:
-        st.metric("🏦 Valor Asegurado Total (USD)", f"${df['Valor Asegurado'].sum():,.2f}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("🛡️ Pólizas únicas", polizas_unicas)
+    c2.metric("💵 Prima Total (USD)", f"${total_prima:,.2f}")
+    c3.metric("🏦 Valor Asegurado Total (USD)", f"${total_valor:,.2f}")
 
-    # Mostrar tabla en Streamlit (máximo 10 registros)
+    # Mostrar tabla en Streamlit (solo 10 registros)
     st.success("✅ Archivos procesados correctamente")
     st.dataframe(df.head(10))
 
-    # Guardar Excel en memoria
+    # Guardar Excel en memoria (todos los registros)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False)
