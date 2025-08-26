@@ -10,10 +10,6 @@ st.title("📄 Procesador de Pólizas en PDF")
 # Subida de archivos PDF
 uploaded_files = st.file_uploader("Sube tus archivos PDF", type="pdf", accept_multiple_files=True)
 
-# Botón para limpiar resultados
-if st.button("🧹 Limpiar resultados"):
-    st.session_state.pop("df", None)
-
 # Función para extraer la placa desde la columna "Ítem"
 def extraer_placa_desde_item(item):
     if isinstance(item, str):
@@ -81,33 +77,28 @@ if uploaded_files:
     # Extraer la placa desde la columna "Ítem"
     df["Placa"] = df["Ítem"].apply(extraer_placa_desde_item)
 
-    # Guardar en sesión para no perderlo
-    st.session_state["df"] = df
+    # Convertir valores numéricos
+    df["Valor Asegurado"] = df["Valor Asegurado"].str.replace(",", "").astype(float, errors="ignore")
+    df["Prima Neta"] = df["Prima Neta"].str.replace(",", "").astype(float, errors="ignore")
 
-if "df" in st.session_state:
-    df = st.session_state["df"]
-
-    # 📌 Resumen con tarjetas
-    col1, col2, col3, col4 = st.columns(4)
+    # Mostrar métricas (solo prima y valor asegurado en USD)
+    col1, col2 = st.columns(2)
     with col1:
-        st.metric("Total Pólizas", df["Póliza"].nunique())
+        st.metric("💵 Prima Total (USD)", f"${df['Prima Neta'].sum():,.2f}")
     with col2:
-        st.metric("Total Registros", len(df))
-    with col3:
-        st.metric("Prima Total", df["Prima Neta"].replace("", 0).replace(",", "", regex=True).astype(float).sum())
-    with col4:
-        st.metric("Valor Asegurado Total", df["Valor Asegurado"].replace("", 0).replace(",", "", regex=True).astype(float).sum())
+        st.metric("🏦 Valor Asegurado Total (USD)", f"${df['Valor Asegurado'].sum():,.2f}")
 
-    # 📌 Mostrar solo primeros 10 registros
+    # Mostrar tabla en Streamlit (máximo 10 registros)
     st.success("✅ Archivos procesados correctamente")
     st.dataframe(df.head(10))
 
-    # 📌 Botón descarga Excel
+    # Guardar Excel en memoria
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False)
     output.seek(0)
 
+    # Botón de descarga
     st.download_button(
         label="⬇️ Descargar Excel",
         data=output,
