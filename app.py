@@ -5,96 +5,112 @@ import pdfplumber
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="📄 Procesador de Pólizas", layout="wide")
 st.title("📄 Procesador de Pólizas en PDF")
-
-# Inicializar session_state
-if "data" not in st.session_state:
-    st.session_state.data = pd.DataFrame()
-if "pagina" not in st.session_state:
-    st.session_state.pagina = 1
 
 # Subida de archivos PDF
 uploaded_files = st.file_uploader("Sube tus archivos PDF", type="pdf", accept_multiple_files=True)
 
-# Procesar PDFs
+# Botón para limpiar resultados
+if st.button("🧹 Limpiar resultados"):
+    st.session_state.pop("df", None)
+
+# Función para extraer la placa desde la columna "Ítem"
+def extraer_placa_desde_item(item):
+    if isinstance(item, str):
+        match = re.search(r"PLACA:\s*([A-Z0-9]+)", item)
+        return match.group(1) if match else ""
+    return ""
+
 if uploaded_files:
     all_rows = []
 
     for uploaded_file in uploaded_files:
+        # Leer PDF en memoria
         with pdfplumber.open(uploaded_file) as pdf:
-            text = ""
-            for page in pdf.pages:
-                text += page.extract_text() + "\n"
+            text = "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
 
-            # Buscar placa
-            placa_match = re.search(r"Placa\s*:?[\s\n]*([A-Z0-9-]{5,10})", text, re.IGNORECASE)
-            placa = placa_match.group(1) if placa_match else "No encontrada"
+        # Extraer datos generales
+        poliza = re.search(r"Póliza\s+(\d+)", text)
+        cliente = re.search(r"Cliente\s+([A-Z ,]+)", text)
+        vigencia = re.search(r"Vigencia\s+(\d{2}/\d{2}/\d{4} - \d{2}/\d{2}/\d{4})", text)
 
-            # Regex flexible para ítems
-            items = re.findall(r"(\d+)\s+([A-Za-zÁÉÍÓÚÑ0-9\- ]+?)\s+(\d+(?:\.\d{1,2})?)\s+(\d+(?:\.\d{1,2})?)", text)
+        nro_poliza = poliza.group(1) if poliza else "SIN_POLIZA"
+        nombre_cliente = cliente.group(1).strip() if cliente else "SIN_CLIENTE"
+        rango_vigencia = vigencia.group(1) if vigencia else "SIN_VIGENCIA"
 
-            for item in items:
-                all_rows.append({
-                    "Archivo": uploaded_file.name,
-                    "Placa": placa,
-                    "Código": item[0],
-                    "Descripción": item[1].strip(),
-                    "Prima": item[2],
-                    "Total": item[3]
-                })
+        # Buscar secciones
+        seccion_pattern = re.compile(r"SECCION: \d{3} [A-Z ]+")
+        secciones = seccion_pattern.findall(text)
 
-    if all_rows:
-        st.session_state.data = pd.DataFrame(all_rows)
-        st.session_state.pagina = 1  # resetear a primera página
+        # Dividir texto por secciones
+        seccion_data = {}
+        for i, sec in enumerate(secciones):
+            start = text.find(sec)
+            end = text.find(secciones[i+1]) if i+1 < len(secciones) else len(text)
+            seccion_data[sec] = text[start:end]
 
-# Si hay datos procesados
-if not st.session_state.data.empty:
-    df = st.session_state.data
+        # Extraer ítems con valor asegurado y prima neta
+        for sec, content in seccion_data.items():
+            lines = content.split("\n")
+            for i in range(len(lines)):
+                line = lines[i].strip()
+                match = re.match(
+                    r"^(\d+\.|[A-Z]\.)\s+(.*?)(\d{1,3}(?:,\d{3})*(?:\.\d{2}))\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2}))$",
+                    line
+                )
+                if match:
+                    item_desc = match.group(2).strip()
+                    valor = match.group(3)
+                    prima = match.group(4)
+                    all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_desc, valor, prima])
+                else:
+                    if re.match(r"^(\d+\.|[A-Z]\.)\s+", line):
+                        item_desc = line
+                        valor = ""
+                        prima = ""
+                        for j in range(i+1, min(i+5, len(lines))):
+                            nums = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", lines[j])
+                            if len(nums) >= 2:
+                                valor, prima = nums[0], nums[1]
+                                break
+                        all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_desc, valor, prima])
 
-    # Tarjetas resumen
-    col1, col2, col3 = st.columns(3)
+    # Crear DataFrame
+    df = pd.DataFrame(all_rows, columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Valor Asegurado", "Prima Neta"])
+
+    # Extraer la placa desde la columna "Ítem"
+    df["Placa"] = df["Ítem"].apply(extraer_placa_desde_item)
+
+    # Guardar en sesión para no perderlo
+    st.session_state["df"] = df
+
+if "df" in st.session_state:
+    df = st.session_state["df"]
+
+    # 📌 Resumen con tarjetas
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("📊 Total registros", len(df))
+        st.metric("Total Pólizas", df["Póliza"].nunique())
     with col2:
-        st.metric("🚗 Placas únicas", df["Placa"].nunique())
+        st.metric("Total Registros", len(df))
     with col3:
-        st.metric("📂 PDFs procesados", df["Archivo"].nunique())
+        st.metric("Prima Total", df["Prima Neta"].replace("", 0).replace(",", "", regex=True).astype(float).sum())
+    with col4:
+        st.metric("Valor Asegurado Total", df["Valor Asegurado"].replace("", 0).replace(",", "", regex=True).astype(float).sum())
 
-    # Paginación
-    registros_por_pagina = 10
-    total_paginas = (len(df) - 1) // registros_por_pagina + 1
+    # 📌 Mostrar solo primeros 10 registros
+    st.success("✅ Archivos procesados correctamente")
+    st.dataframe(df.head(10))
 
-    colA, colB, colC = st.columns([1,2,1])
-    with colA:
-        if st.button("⬅️ Anterior") and st.session_state.pagina > 1:
-            st.session_state.pagina -= 1
-    with colC:
-        if st.button("Siguiente ➡️") and st.session_state.pagina < total_paginas:
-            st.session_state.pagina += 1
-
-    inicio = (st.session_state.pagina - 1) * registros_por_pagina
-    fin = inicio + registros_por_pagina
-
-    st.dataframe(df.iloc[inicio:fin], use_container_width=True)
-    st.caption(f"Página {st.session_state.pagina} de {total_paginas}")
-
-    # Botón descarga Excel
+    # 📌 Botón descarga Excel
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Pólizas")
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False)
+    output.seek(0)
+
     st.download_button(
-        label="📥 Descargar Excel",
-        data=output.getvalue(),
-        file_name="polizas_procesadas.xlsx",
+        label="⬇️ Descargar Excel",
+        data=output,
+        file_name="Renovaciones_Procesadas.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
-    # Botón limpiar
-    if st.button("🗑️ Limpiar todo"):
-        st.session_state.data = pd.DataFrame()
-        st.session_state.pagina = 1
-        st.rerun()
-
-else:
-    st.info("👆 Sube tus archivos PDF para procesarlos.") 
