@@ -5,7 +5,7 @@ import pdfplumber
 import pandas as pd
 import streamlit as st
 
-st.title("📄 EXTRAER DATOS PDF - MARSH 📄")
+st.title("📄EXTRAER DATOS PDF - MARSH")
 
 # --- Estilos personalizados ---
 st.markdown("""
