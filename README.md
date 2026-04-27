@@ -93,8 +93,7 @@ El Excel generado contiene:
 
 ## 👤 Autor
 
-**Engel García Gama**  
-Emisor Profesional – Emisiones Masivas  
+**Engel García **    
 Lima, Perú
 
 ---
