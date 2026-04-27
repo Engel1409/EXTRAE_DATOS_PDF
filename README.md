@@ -1,6 +1,6 @@
 # 📄 Extractor de Datos PDF – MARSH
 
-Aplicación web desarrollada con **Streamlit** para **extraer, consolidar y exportar información clave desde archivos PDF de pólizas MARSH**, enfocada en procesos de **renovaciones y análisis de emisiones**.
+Aplicación web desarrollada con **Streamlit** para **extraer, consolidar y exportar información clave desde archivos PDF de pólizas**, enfocada en procesos de **renovaciones y análisis de emisiones**.
 
 Permite cargar múltiples PDFs, procesarlos automáticamente y descargar un **Excel consolidado** con los datos relevantes.
 
