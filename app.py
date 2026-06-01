@@ -112,8 +112,8 @@ if uploaded_files:
 
     c1, c2, c3 = st.columns(3)
     c1.metric("🛡️ Cantidad Pólizas Grupo", polizas_unicas)
-    # c2.metric("💵 Prima Total (USD)", f"${total_prima:,.2f}")
-    # c3.metric("🏦 Valor Asegurado Total (USD)", f"${total_valor:,.2f}")
+    c2.metric("💵 Prima Total (USD)", f"${total_prima:,.2f}")
+    c3.metric("🏦 Valor Asegurado Total (USD)", f"${total_valor:,.2f}")
 
     # Mostrar tabla
     st.success("✅ Archivos procesados correctamente")
