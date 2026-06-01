@@ -5,7 +5,8 @@ import pdfplumber
 import pandas as pd
 import streamlit as st
 
-st.title("📄EXTRAER DATOS PDF - MARSH")
+st.title("📄POLIDATA")
+st.caption("Extraccion automática de datos desde PDF empresariales")
 
 # --- Estilos personalizados ---
 st.markdown("""
