@@ -1,4 +1,4 @@
-# 📄 Extractor de Datos PDF – MARSH
+# 📄 Extractor de Datos PD
 
 Aplicación web desarrollada con **Streamlit** para **extraer, consolidar y exportar información clave desde archivos PDF de pólizas**, enfocada en procesos de **renovaciones y análisis de emisiones**.
 
