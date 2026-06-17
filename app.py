@@ -7,7 +7,7 @@ import streamlit as st
 
 st.title("📄POLIDATA")
 st.caption("Extraccion automática de datos desde PDF empresariales")
-NO ME ESTA JALANDO LA POLIZA 
+#NO ME ESTA JALANDO LA POLIZA 
 
 # --- Estilos personalizados ---
 st.markdown("""
