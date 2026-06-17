@@ -7,6 +7,7 @@ import streamlit as st
 
 st.title("📄POLIDATA")
 st.caption("Extraccion automática de datos desde PDF empresariales")
+NO ME ESTA JALANDO LA POLIZA 
 
 # --- Estilos personalizados ---
 st.markdown("""
@@ -41,7 +42,7 @@ st.markdown("""
 st.markdown("**Arrastra y suelta tus archivos PDF aquí o haz clic en 'Browse files' para seleccionarlos.**")
 uploaded_files = st.file_uploader("Sube tus archivos PDF", type="pdf", accept_multiple_files=True)
 
-# Función para extraer la placa
+# Función para extraer la placa desde la columna "Ítem"
 def extraer_placa_desde_item(item):
     if isinstance(item, str):
         match = re.search(r"PLACA:\s*([A-Z0-9]+)", item)
@@ -55,35 +56,23 @@ if uploaded_files:
         with pdfplumber.open(uploaded_file) as pdf:
             text = "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
 
-        # 🔥 LIMPIEZA (CLAVE PARA PDFs ROTOS)
-        text = re.sub(r"\s+", " ", text)
-
-        # -------- POLIZA ROBUSTA --------
-        poliza = re.search(r"P[oó]liza\s*[:\-]?\s*(\d+)", text, re.IGNORECASE)
-
-        if not poliza:
-            poliza = re.search(r"P\s*l\s*i\s*z\s*a\s*[:\-]?\s*(\d+)", text, re.IGNORECASE)
-
-        if not poliza:
-            poliza = re.search(r"P\s*liza\s*[:\-]?\s*(\d+)", text, re.IGNORECASE)
-
-        if not poliza:
-            poliza = re.search(r"\b\d{5,}\b", text)  # fallback
-
-        nro_poliza = poliza.group(1) if poliza else "SIN_POLIZA"
-
-        # -------- OTROS DATOS --------
-        cliente = re.search(r"Cliente\s+([A-Z ,]+)", text, re.IGNORECASE)
+        # Extraer datos generales
+        # poliza = re.search(r"P[oó]liza\s+(\d+)", text)
+        poliza = re.search(r"(?:P[oó]liza|POLIZA|N[°º]?\s*P[oó]liza)\s*[:\-]?\s*([0-9\-]+)", text, re.IGNORECASE)
+        cliente = re.search(r"Cliente\s+([A-Z ,]+)", text)
         vigencia = re.search(r"Vigencia\s+(\d{2}/\d{2}/\d{4} - \d{2}/\d{2}/\d{4})", text)
 
+        nro_poliza = poliza.group(1) if poliza else "SIN_POLIZA"
         nombre_cliente = cliente.group(1).strip() if cliente else "SIN_CLIENTE"
         rango_vigencia = vigencia.group(1) if vigencia else "SIN_VIGENCIA"
 
-        # -------- SECCIONES --------
+        # Buscar secciones
         seccion_pattern = re.compile(r"(SECCION: \d{3} [A-ZÑÁÉÍÓÚ ]+)")
+        secciones = seccion_pattern.findall(text)
         seccion_indices = [(m.start(), m.group()) for m in seccion_pattern.finditer(text)]
         seccion_indices.append((len(text), None))
 
+        # Dividir texto por secciones
         seccion_data = {}
         for i in range(len(seccion_indices) - 1):
             start_idx = seccion_indices[i][0]
@@ -91,20 +80,18 @@ if uploaded_files:
             seccion = seccion_indices[i][1]
             seccion_data[seccion] = text[start_idx:end_idx]
 
-        # -------- ITEMS --------
+        # Extraer ítems
         for sec, content in seccion_data.items():
             lines = content.split("\n")
-
             for i, line in enumerate(lines):
                 line = line.strip()
-
                 match = re.match(r"^(.*?)(\d{1,3}(?:,\d{3})*\.\d{2})\s+(\d{1,3}(?:,\d{3})*\.\d{2})$", line)
-
                 if match:
                     item_desc = match.group(1).strip()
                     valor = match.group(2)
                     prima = match.group(3)
 
+                    # Buscar placa en línea actual o anteriores
                     placa = ""
                     for j in range(i, max(i - 3, -1), -1):
                         placa_match = re.search(r"PLACA:\s*([A-Z0-9]+)", lines[j])
@@ -112,35 +99,17 @@ if uploaded_files:
                             placa = placa_match.group(1)
                             break
 
-                    all_rows.append([
-                        nro_poliza,
-                        nombre_cliente,
-                        rango_vigencia,
-                        sec,
-                        item_desc,
-                        valor,
-                        prima,
-                        placa
-                    ])
+                    all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_desc, valor, prima, placa])
 
-    # -------- DATAFRAME --------
+    # Crear DataFrame
     df = pd.DataFrame(
         all_rows,
-        columns=[
-            "Póliza",
-            "Cliente",
-            "Vigencia",
-            "Sección",
-            "Ítem",
-            "Valor Asegurado",
-            "Prima Neta",
-            "Placa"
-        ]
+        columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Valor Asegurado", "Prima Neta", "Placa"]
     )
 
-    # -------- KPIs --------
-    total_prima = pd.to_numeric(df["Prima Neta"].str.replace(",", ""), errors="coerce").sum()
-    total_valor = pd.to_numeric(df["Valor Asegurado"].str.replace(",", ""), errors="coerce").sum()
+    # --- Tarjetas resumen ---
+    total_prima = pd.to_numeric(df["Prima Neta"].astype(str).str.replace(",", "", regex=True), errors="coerce").sum()
+    total_valor = pd.to_numeric(df["Valor Asegurado"].astype(str).str.replace(",", "", regex=True), errors="coerce").sum()
     polizas_unicas = df["Póliza"].nunique()
 
     c1, c2, c3 = st.columns(3)
@@ -148,17 +117,17 @@ if uploaded_files:
     #c2.metric("💵 Prima Total (USD)", f"${total_prima:,.2f}")
     #c3.metric("🏦 Valor Asegurado Total (USD)", f"${total_valor:,.2f}")
 
-    # -------- TABLA --------
+    # Mostrar tabla
     st.success("✅ Archivos procesados correctamente")
     st.dataframe(df.head(10))
 
-    # -------- EXCEL --------
+    # Guardar Excel
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False)
-
     output.seek(0)
 
+    # Botón de descarga
     st.download_button(
         label="⬇️ Descargar Excel",
         data=output,
