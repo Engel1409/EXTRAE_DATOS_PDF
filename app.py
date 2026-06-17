@@ -58,7 +58,9 @@ if uploaded_files:
 
         # Extraer datos generales
         # poliza = re.search(r"P[oó]liza\s+(\d+)", text)
-        poliza = re.search(r"(?:P[oó]liza|POLIZA|N[°º]?\s*P[oó]liza)\s*[:\-]?\s*([0-9\-]+)", text, re.IGNORECASE)
+        # poliza = re.search(r"(?:P[oó]liza|POLIZA|N[°º]?\s*P[oó]liza)\s*[:\-]?\s*([0-9\-]+)", text, re.IGNORECASE)
+        #poliza = re.search(r"(?:P[oó]liza|POLIZA|N[°º]?\s*P[oó]liza)\s*[:\-]?\s*([0-9\-]+)", text, re.IGNORECASE)
+        poliza = re.search(r"P\s*l\s*i\s*z\s*a\s*[:\-]?\s*(\d+)", text, re.IGNORECASE)
         cliente = re.search(r"Cliente\s+([A-Z ,]+)", text)
         vigencia = re.search(r"Vigencia\s+(\d{2}/\d{2}/\d{4} - \d{2}/\d{2}/\d{4})", text)
 
