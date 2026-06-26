@@ -12,5 +12,5 @@ jobs:
       - name: Push to hub
         uses: huggingface/hub-sync@main
         with:
-          repo: "Data-engel/datos-pdf-excel"
-          token: ${{ secrets.HF_TOKEN }}
+          huggingface_repo_id: "Data-engel/datos-pdf-excel"
+          hf_token: ${{ secrets.HF_TOKEN }}
