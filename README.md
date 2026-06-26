@@ -1,3 +1,13 @@
+---
+title: POLIDATA
+emoji: 📄
+colorFrom: blue
+colorTo: red
+sdk: streamlit
+sdk_version: 1.30.0
+app_file: app.py
+pinned: false
+---
 # 📄 Extractor de Datos PD
 
 Aplicación web desarrollada con **Streamlit** para **extraer, consolidar y exportar información clave desde archivos PDF de pólizas**, enfocada en procesos de **renovaciones y análisis de emisiones**.
