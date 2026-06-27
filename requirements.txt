@@ -1,4 +1,6 @@
+
 streamlit
-pandas
 pdfplumber
+pandas
 openpyxl
+python-docx
