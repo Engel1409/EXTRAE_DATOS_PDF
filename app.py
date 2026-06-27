@@ -4,41 +4,47 @@ import io
 import pdfplumber
 import pandas as pd
 import streamlit as st
+import openpyxl
+import datetime
+import unicodedata
+from io import BytesIO
+from docx import Document
 
-# 1. Configuración de página
-st.set_page_config(page_title="POLIDATA & TXT", layout="wide")
+# ---------------------------------------------------------
+# CONFIGURACIÓN DE PÁGINA
+# ---------------------------------------------------------
+st.set_page_config(page_title="Suite Operativa", layout="wide")
 
-# 2. Estilos personalizados para un look corporativo y limpio
 st.markdown("""
     <style>
-    /* Ocultar elementos de Streamlit para que parezca una app nativa */
     #MainMenu, footer, header { visibility: hidden; }
     .stApp { background-color: #f6f8fa; font-family: 'Segoe UI', Arial, sans-serif; }
-    
-    /* Botones y diseño */
     h1 { color: #0a3d62; border-left: 5px solid #DA291C; padding-left: 10px; }
     div.stButton > button { background-color: #DA291C !important; color: white !important; font-weight: bold !important; border-radius: 8px !important; }
     div.stDownloadButton > button { background-color: #1e293b !important; color: white !important; font-weight: bold !important; border-radius: 8px !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# 3. Navegación superior (Pestañas)
-tab1, tab2 = st.tabs(["📄 POLIDATA (PDF)", "🔍 FILTRADOR (TXT)"])
+# ---------------------------------------------------------
+# TABS
+# ---------------------------------------------------------
+tab1, tab2, tab3 = st.tabs(["📄 POLIDATA (PDF)", "🔍 FILTRADOR (TXT)", "📝 NORMALIZADOR"])
 
-# --- LÓGICA TAB 1: POLIDATA ---
+# ==========================================================
+# TAB 1: POLIDATA
+# ==========================================================
 with tab1:
     st.title("📄 POLIDATA")
-    st.caption("Extracción automática de datos desde PDF empresariales")
-    
-    uploaded_files = st.file_uploader("Sube tus archivos PDF aquí", type="pdf", accept_multiple_files=True)
+    st.caption("Extracción automática de datos desde PDF")
+
+    uploaded_files = st.file_uploader("Sube tus archivos PDF aquí", type="pdf", accept_multiple_files=True, key="pdf_uploader")
 
     if uploaded_files:
         all_rows = []
         for uploaded_file in uploaded_files:
             with pdfplumber.open(uploaded_file) as pdf:
                 text = "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
-            
-            # Extracción de campos clave
+
             poliza = re.search(r"(?:P\s*[ÓO]?\s*L\s*I\s*Z\s*A|P[ÓO]LIZA)\s*[:\-]?\s*(\d{4,})", text, re.IGNORECASE)
             cliente = re.search(r"Cliente\s+([A-Z ,]+)", text)
             vigencia = re.search(r"Vigencia\s+(\d{2}/\d{2}/\d{4} - \d{2}/\d{2}/\d{4})", text)
@@ -68,10 +74,12 @@ with tab1:
             df.to_excel(writer, index=False)
         st.download_button("⬇️ Descargar Excel", data=output.getvalue(), file_name="Renovaciones.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# --- LÓGICA TAB 2: FILTRADOR TXT ---
+# ==========================================================
+# TAB 2: FILTRADOR TXT
+# ==========================================================
 with tab2:
     st.title("📄 Filtrar líneas (TXT)")
-    txt_archivos = st.file_uploader("Sube tus archivos .txt", type=["txt"], accept_multiple_files=True)
+    txt_archivos = st.file_uploader("Sube tus archivos .txt", type=["txt"], accept_multiple_files=True, key="txt_uploader")
     prefijos = ('121', '101', '301', '203', '260')
 
     if st.button("Procesar TXT") and txt_archivos:
@@ -81,10 +89,254 @@ with tab2:
             for linea in contenido.splitlines():
                 if linea.startswith(prefijos):
                     lineas_filtradas.append({'archivo': archivo.name, 'linea': linea.strip()})
-        
+
         df_txt = pd.DataFrame(lineas_filtradas)
         if not df_txt.empty:
             st.dataframe(df_txt, use_container_width=True)
             st.download_button("📥 Descargar CSV", data=df_txt.to_csv(index=False), file_name="filtrado.csv", mime="text/csv")
         else:
             st.warning("No se encontraron líneas con los prefijos seleccionados.")
+
+# ==========================================================
+# TAB 3: NORMALIZADOR WORD Y EXCEL
+# ==========================================================
+
+COLUMNAS_EXCLUIDAS = [
+    "poliza", "nro_documento", "documento", "id", "ruc", "dni",
+    "nro_asegurados", "asegurados", "vigencia", "plazo", "ano", "periodo",
+    "nro", "ciiu_giro_del_negocio", "vigencia_inicio", "vigencia_termino",
+    "plazo_asegurar", "pisos", "sotanos", "recibo", "aseg", "fecha"
+]
+
+def normalizar(texto):
+    if pd.isna(texto):
+        return ""
+    texto = str(texto).strip().lower()
+    texto = unicodedata.normalize('NFKD', texto)
+    texto = texto.encode('ascii', 'ignore').decode('utf-8')
+    texto = re.sub(r"[ .\-\/]+", "_", texto)
+    texto = re.sub(r"[^a-z0-9_]", "", texto)
+    texto = re.sub(r"_+", "_", texto)
+    return texto.strip("_")
+
+
+def formatear_por_columna(val, nombre_columna):
+    if pd.isna(val) or str(val).strip() == "":
+        return ""
+    if isinstance(val, (datetime.datetime, datetime.date)):
+        return val.strftime("%d/%m/%Y")
+    val_str = str(val).strip()
+    if any(clave in nombre_columna for clave in COLUMNAS_EXCLUIDAS):
+        if val_str.endswith('.0'):
+            val_str = val_str[:-2]
+        if "-" in val_str and len(val_str) >= 10 and val_str[:4].isdigit():
+            try:
+                fecha_corta = val_str.split(" ")[0]
+                partes = fecha_corta.split("-")
+                if len(partes) == 3:
+                    return f"{partes[2]}/{partes[1]}/{partes[0]}"
+            except Exception:
+                pass
+        return val_str.upper()
+    try:
+        num = float(val)
+        return f"{num:,.2f}"
+    except ValueError:
+        return val_str.upper()
+
+
+def procesar_parrafo(paragraph):
+    full_text = "".join(run.text for run in paragraph.runs)
+    if "{{" not in full_text:
+        return
+    variables = re.findall(r"{{(.*?)}}", full_text)
+    for var in variables:
+        nueva = normalizar(var)
+        full_text = full_text.replace("{{" + var + "}}", "{{" + nueva + "}}")
+    index = 0
+    for run in paragraph.runs:
+        length = len(run.text)
+        run.text = full_text[index:index + length]
+        index += length
+
+
+def normalizar_word(doc):
+    for para in doc.paragraphs:
+        procesar_parrafo(para)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    procesar_parrafo(para)
+
+
+def extraer_tags_word(doc):
+    tags = set()
+    patron = re.compile(r"{{(.*?)}}")
+    for para in doc.paragraphs:
+        for var in patron.findall(para.text):
+            tags.add(normalizar(var))
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    for var in patron.findall(para.text):
+                        tags.add(normalizar(var))
+    return tags
+
+
+with tab3:
+    st.title("📄 Normalizador Word y Excel 📄")
+    st.write("Recuerda que en el Word los tags {{}} deben coincidir con las cabeceras del excel.")
+
+    word_file = st.file_uploader("📄 Subir Word", type=["docx"], key="word_uploader")
+    excel_file = st.file_uploader("📊 Subir Excel", type=["xlsx"], key="excel_uploader")
+
+    if word_file and excel_file:
+        errores = []
+
+        if not word_file.name.endswith(".docx"):
+            st.error("❌ El archivo Word debe ser formato .docx")
+            st.stop()
+        if not excel_file.name.endswith(".xlsx"):
+            st.error("❌ El archivo Excel debe ser formato .xlsx")
+            st.stop()
+
+        with st.spinner("Procesando archivos..."):
+
+            # WORD
+            try:
+                doc = Document(word_file)
+            except Exception as e:
+                errores.append(f"❌ No se pudo leer el archivo Word: {e}")
+                doc = None
+
+            tags_word = set()
+            word_buffer = None
+
+            if doc:
+                try:
+                    tags_word = extraer_tags_word(doc)
+                    normalizar_word(doc)
+                except Exception as e:
+                    errores.append(f"❌ Error al normalizar el Word: {e}")
+                try:
+                    word_buffer = BytesIO()
+                    doc.save(word_buffer)
+                except Exception as e:
+                    errores.append(f"❌ Error al guardar el Word normalizado: {e}")
+                    word_buffer = None
+
+            # EXCEL
+            try:
+                wb = openpyxl.load_workbook(excel_file)
+                sheet = wb.active
+            except Exception as e:
+                errores.append(f"❌ No se pudo leer el archivo Excel: {e}")
+                wb = None
+                sheet = None
+
+            excel_buffer = None
+            columnas_normalizadas = []
+            indices_filtrados = []
+
+            if sheet:
+                try:
+                    for col_idx in range(1, sheet.max_column + 1):
+                        celda = sheet.cell(row=1, column=col_idx)
+                        nombre = normalizar(celda.value) if celda.value else f"col_{col_idx}"
+                        celda.value = nombre
+                        columnas_normalizadas.append(nombre)
+
+                    idx_nro = columnas_normalizadas.index("nro") + 1 if "nro" in columnas_normalizadas else None
+                    filas_a_borrar = []
+
+                    for row_idx in range(2, sheet.max_row + 1):
+                        if idx_nro:
+                            valor = str(sheet.cell(row=row_idx, column=idx_nro).value or "").strip()
+                            if valor == "" or valor == "0":
+                                filas_a_borrar.append(row_idx)
+                                continue
+                        for col_idx in range(1, sheet.max_column + 1):
+                            celda = sheet.cell(row=row_idx, column=col_idx)
+                            nombre_col = columnas_normalizadas[col_idx - 1]
+                            celda.value = formatear_por_columna(celda.value, nombre_col)
+
+                    for row_idx in reversed(filas_a_borrar):
+                        sheet.delete_rows(row_idx)
+
+                except Exception as e:
+                    errores.append(f"❌ Error al procesar los datos del Excel: {e}")
+
+                try:
+                    cabeceras = [sheet.cell(row=1, column=c).value for c in range(1, sheet.max_column + 1)]
+                    indices_filtrados = [i for i, cab in enumerate(cabeceras) if cab in tags_word]
+
+                    if not indices_filtrados:
+                        errores.append("⚠️ Advertencia: Ninguna columna del Excel coincide con los tags del Word.")
+
+                    wb_filtrado = openpyxl.Workbook()
+                    ws_filtrado = wb_filtrado.active
+
+                    for row_idx in range(1, sheet.max_row + 1):
+                        nueva_fila = [sheet.cell(row=row_idx, column=i + 1).value for i in indices_filtrados]
+                        ws_filtrado.append(nueva_fila)
+
+                    excel_buffer = BytesIO()
+                    wb_filtrado.save(excel_buffer)
+
+                except Exception as e:
+                    errores.append(f"❌ Error al generar el Excel filtrado: {e}")
+                    excel_buffer = None
+
+        # ERRORES
+        if errores:
+            st.markdown("---")
+            st.subheader("⚠️ Errores y advertencias")
+            for err in errores:
+                if err.startswith("❌"):
+                    st.error(err)
+                else:
+                    st.warning(err)
+            st.markdown("---")
+
+        errores_criticos = [e for e in errores if e.startswith("❌")]
+
+        if not errores_criticos:
+            st.subheader("✅ Previsualización")
+
+            try:
+                df_vista = pd.DataFrame(sheet.values)
+                if not df_vista.empty:
+                    df_vista.columns = df_vista.iloc[0]
+                    df_vista = df_vista[1:]
+                    df_vista = df_vista.loc[:, ~df_vista.columns.duplicated()]
+
+                    cabeceras_ordenadas = [sheet.cell(row=1, column=i + 1).value for i in indices_filtrados]
+                    cols_mostrar = [c for c in cabeceras_ordenadas if c in df_vista.columns]
+
+                    if cols_mostrar:
+                        st.info(f"🔍 Mostrando {len(cols_mostrar)} columna(s) usadas en el Word: `{'`, `'.join(sorted(cols_mostrar))}`")
+                        st.dataframe(df_vista[cols_mostrar].head(5), use_container_width=True)
+                    else:
+                        st.warning("⚠️ No se encontraron columnas que coincidan con los tags del Word.")
+            except Exception as e:
+                st.error(f"❌ Error al generar la previsualización: {e}")
+
+            if tags_word:
+                with st.expander("🏷️ Tags detectados en el Word"):
+                    st.write(sorted(tags_word))
+
+            st.success("✅ Archivos listos para descargar")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if word_buffer:
+                    st.download_button("📄 Descargar Word", word_buffer.getvalue(), "word_normalizado.docx")
+                else:
+                    st.error("❌ Word no disponible para descarga.")
+            with col2:
+                if excel_buffer:
+                    st.download_button("📊 Descargar Excel", excel_buffer.getvalue(), "excel_limpio.xlsx")
+                else:
+                    st.error("❌ Excel no disponible para descarga.")
