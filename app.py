@@ -1,14 +1,19 @@
 import os
 import re
 import io
+import warnings
 import pdfplumber
 import pandas as pd
 import streamlit as st
 import openpyxl
 import datetime
+from datetime import datetime as dt
 import unicodedata
 from io import BytesIO
 from docx import Document
+from openpyxl.styles import PatternFill, Font
+
+warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 # ---------------------------------------------------------
 # CONFIGURACIÓN DE PÁGINA
@@ -26,9 +31,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# TABS
+# TABS (orden: POLIDATA, Cálculo de Primas, Normalizador, Filtrador TXT)
 # ---------------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["📄 POLIDATA (PDF)", "🔍 FILTRADOR (TXT)", "📝 NORMALIZADOR"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📄 POLIDATA (PDF)",
+    "📊 CÁLCULO DE PRIMAS",
+    "📝 NORMALIZADOR",
+    "🔍 FILTRADOR (TXT)"
+])
 
 # ==========================================================
 # TAB 1: POLIDATA
@@ -90,30 +100,181 @@ with tab1:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df.to_excel(writer, index=False)
-        st.download_button("⬇️ Descargar Excel", data=output.getvalue(), file_name="Renovaciones.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("⬇️ Descargar Excel", data=output.getvalue(), file_name="Renovaciones.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="polidata_download")
 
 # ==========================================================
-# TAB 2: FILTRADOR TXT
+# TAB 2: CÁLCULO DE PRIMAS
 # ==========================================================
 with tab2:
-    st.title("📄 Filtrar líneas (TXT)")
-    txt_archivos = st.file_uploader("Sube tus archivos .txt", type=["txt"], accept_multiple_files=True, key="txt_uploader")
-    prefijos = ('121', '101', '301', '203', '260')
+    st.title("📊 Validación y Cálculo de Primas - Seguros 📊")
 
-    if st.button("Procesar TXT") and txt_archivos:
-        lineas_filtradas = []
-        for archivo in txt_archivos:
-            contenido = archivo.read().decode('utf-8', errors='ignore')
-            for linea in contenido.splitlines():
-                if linea.startswith(prefijos):
-                    lineas_filtradas.append({'archivo': archivo.name, 'linea': linea.strip()})
+    zona = st.selectbox("Selecciona la zona", options=["Sur", "Norte"], index=0, key="primas_zona")
+    NETA = 0.00038 if zona == "Sur" else 0.00036
+    V_D_E = 0.03
+    V_IGV = 0.18
 
-        df_txt = pd.DataFrame(lineas_filtradas)
-        if not df_txt.empty:
-            st.dataframe(df_txt, use_container_width=True)
-            st.download_button("📥 Descargar CSV", data=df_txt.to_csv(index=False), file_name="filtrado.csv", mime="text/csv")
-        else:
-            st.warning("No se encontraron líneas con los prefijos seleccionados.")
+    usuarios = ["Sofi B", "Engel B", "User_01", "User_02"]
+    usuario_seleccionado = st.selectbox("Selecciona tu usuario:", usuarios, key="primas_usuario")
+
+    fecha_reporte = dt.now().strftime("%d/%m/%Y %H:%M:%S")
+    st.write(f"📅 **Fecha del reporte:** {fecha_reporte}")
+
+    archivos = st.file_uploader("Sube tus archivos Excel", type=["xlsx"], accept_multiple_files=True, key="primas_uploader")
+
+    if st.button("Procesar archivos", key="primas_procesar") and archivos:
+
+        no_validos = []
+        resumen = []
+
+        def validar_documento(row):
+            tipo = str(row.get("Tipo de Documento", "")).strip().upper()
+            num = str(row.get("Número de Documento", "")).strip()
+            if tipo == "DNI":
+                return "DNI válido" if num.isdigit() and len(num) == 8 else "DNI inválido"
+            return "No es DNI"
+
+        for archivo in archivos:
+            nombre_archivo = archivo.name
+
+            df_p = pd.read_excel(archivo, dtype={"Número de Documento": str})
+            df_p.columns = df_p.columns.str.strip()
+            df_p = df_p.dropna(how="all")
+            df_p["fila_en_excel"] = df_p.index + 2
+
+            if df_p.empty:
+                resumen.append({"Archivo": nombre_archivo, "Poliza": "no declara"})
+                continue
+
+            for col in ["Tipo de Documento", "Número de Documento", "Capital Asegurado", "Prima"]:
+                if col not in df_p.columns:
+                    df_p[col] = pd.NA
+            if "Nombre Completo" not in df_p.columns:
+                df_p["Nombre Completo"] = pd.NA
+
+            df_p["validación documento"] = df_p.apply(validar_documento, axis=1)
+
+            df_no_validos = df_p[df_p["validación documento"] == "No es DNI"].copy()
+            df_no_validos["archivo_origen"] = nombre_archivo
+
+            columnas_finales = [
+                "Tipo de Documento", "Número de Documento", "Nombre Completo",
+                "validación documento", "archivo_origen", "fila_en_excel"
+            ]
+            for col in columnas_finales:
+                if col not in df_no_validos.columns:
+                    df_no_validos[col] = pd.NA
+            df_no_validos = df_no_validos[columnas_finales]
+
+            df_no_validos = df_no_validos[
+                df_no_validos["Número de Documento"].notna() &
+                df_no_validos["Número de Documento"].astype(str).str.strip().ne("") &
+                df_no_validos["Nombre Completo"].notna() &
+                df_no_validos["Nombre Completo"].astype(str).str.strip().ne("")
+            ]
+
+            if not df_no_validos.empty:
+                no_validos.append(df_no_validos)
+
+            ultima_es_subtotal = df_p.iloc[-1].astype(str).str.contains("TOTAL", case=False, na=False).any()
+
+            if ultima_es_subtotal and len(df_p) > 1:
+                ultima_fila = df_p.iloc[-1]
+                df_sin_ultima = df_p.iloc[:-1].copy()
+                sub_capital = ultima_fila.get("Capital Asegurado", "no declara")
+                sub_prima = ultima_fila.get("Prima", "no declara")
+            else:
+                df_sin_ultima = df_p.copy()
+                sub_capital = "no declara"
+                sub_prima = "no declara"
+
+            total_capital_num = df_sin_ultima["Capital Asegurado"].sum(min_count=1)
+
+            s = (df_sin_ultima["Prima"].astype(str)
+                 .str.replace('\u00A0', '', regex=False)
+                 .str.replace('\u202F', '', regex=False)
+                 .str.replace(' ', '', regex=False)
+                 .str.replace('S/', '', regex=False)
+                 .str.replace('s/', '', regex=False)
+                 .str.replace('.', '', regex=False)
+                 .str.replace(',', '.', regex=False))
+
+            total_prima_num = pd.to_numeric(s, errors="coerce").sum(min_count=1)
+
+            capital_num = pd.to_numeric(df_sin_ultima["Capital Asegurado"], errors="coerce")
+
+            prima_neta_reg = capital_num * NETA
+            d_e_reg = prima_neta_reg * V_D_E
+            igv_reg = (prima_neta_reg + d_e_reg) * V_IGV
+            total_reg = prima_neta_reg + d_e_reg + igv_reg
+
+            def red2(x):
+                return float(round(x, 2)) if pd.notna(x) else "no declara"
+
+            suma_prima_neta = red2(prima_neta_reg.sum(min_count=1))
+            suma_d_e = red2(d_e_reg.sum(min_count=1))
+            suma_igv = red2(igv_reg.sum(min_count=1))
+            suma_total = red2(total_reg.sum(min_count=1))
+
+            match = re.search(r'\d{10,}', nombre_archivo)
+            poliza = match.group(0) if match else "no declara"
+
+            resumen.append({
+                "Archivo": nombre_archivo,
+                "Poliza": poliza,
+                "Usuario": usuario_seleccionado,
+                "Zona": zona,
+                "Fecha_reporte": fecha_reporte,
+                "Cantidad_registros": len(df_sin_ultima),
+                "Total_capital": total_capital_num,
+                "Total_origen_col_H": sub_capital,
+                "Total_origen_col_J": sub_prima,
+                "prima_neta": suma_prima_neta,
+                "D_E": suma_d_e,
+                "IGV": suma_igv,
+                "TOTAL": suma_total
+            })
+
+        df_no_validos_final = pd.concat(no_validos, ignore_index=True) if no_validos else pd.DataFrame()
+        df_resumen = pd.DataFrame(resumen)
+
+        orden_cols = [
+            "Archivo", "Poliza", "Usuario", "Zona", "Fecha_reporte",
+            "Cantidad_registros", "Total_capital",
+            "Total_origen_col_H", "Total_origen_col_J",
+            "prima_neta", "D_E", "IGV", "TOTAL"
+        ]
+        df_resumen = df_resumen[orden_cols]
+
+        st.subheader("Vista previa de datos")
+        st.write("**Totales por archivo:**")
+        st.dataframe(df_resumen)
+        st.write("**No válidos:**")
+        st.dataframe(df_no_validos_final)
+
+        output_primas = io.BytesIO()
+        with pd.ExcelWriter(output_primas, engine="openpyxl") as writer:
+            df_resumen.to_excel(writer, sheet_name="Totales por archivo", index=False)
+            df_no_validos_final.to_excel(writer, sheet_name="No válidos", index=False)
+
+            wb_primas = writer.book
+            fill = PatternFill(start_color="D53032", end_color="D53032", fill_type="solid")
+            font_white = Font(color="FFFFFF", bold=True)
+
+            hojas = ["Totales por archivo", "No válidos"]
+            for hoja in hojas:
+                ws = wb_primas[hoja]
+                for cell in ws[1]:
+                    cell.fill = fill
+                    cell.font = font_white
+
+        st.success("✅ Proceso completado.")
+        st.download_button(
+            label="📥 Descargar reporte final",
+            data=output_primas.getvalue(),
+            file_name="Resumen_Validacion.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="primas_download"
+        )
 
 # ==========================================================
 # TAB 3: NORMALIZADOR WORD Y EXCEL
@@ -350,11 +511,34 @@ with tab3:
             col1, col2 = st.columns(2)
             with col1:
                 if word_buffer:
-                    st.download_button("📄 Descargar Word", word_buffer.getvalue(), "word_normalizado.docx")
+                    st.download_button("📄 Descargar Word", word_buffer.getvalue(), "word_normalizado.docx", key="norm_download_word")
                 else:
                     st.error("❌ Word no disponible para descarga.")
             with col2:
                 if excel_buffer:
-                    st.download_button("📊 Descargar Excel", excel_buffer.getvalue(), "excel_limpio.xlsx")
+                    st.download_button("📊 Descargar Excel", excel_buffer.getvalue(), "excel_limpio.xlsx", key="norm_download_excel")
                 else:
                     st.error("❌ Excel no disponible para descarga.")
+
+# ==========================================================
+# TAB 4: FILTRADOR TXT
+# ==========================================================
+with tab4:
+    st.title("📄 Filtrar líneas (TXT)")
+    txt_archivos = st.file_uploader("Sube tus archivos .txt", type=["txt"], accept_multiple_files=True, key="txt_uploader")
+    prefijos = ('121', '101', '301', '203', '260')
+
+    if st.button("Procesar TXT", key="txt_procesar") and txt_archivos:
+        lineas_filtradas = []
+        for archivo in txt_archivos:
+            contenido = archivo.read().decode('utf-8', errors='ignore')
+            for linea in contenido.splitlines():
+                if linea.startswith(prefijos):
+                    lineas_filtradas.append({'archivo': archivo.name, 'linea': linea.strip()})
+
+        df_txt = pd.DataFrame(lineas_filtradas)
+        if not df_txt.empty:
+            st.dataframe(df_txt, use_container_width=True)
+            st.download_button("📥 Descargar CSV", data=df_txt.to_csv(index=False), file_name="filtrado.csv", mime="text/csv", key="txt_download")
+        else:
+            st.warning("No se encontraron líneas con los prefijos seleccionados.")
