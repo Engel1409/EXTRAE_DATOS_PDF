@@ -63,9 +63,15 @@ with tab1:
                 for line in content.split("\n"):
                     match = re.match(r"^(.*?)(\d{1,3}(?:,\d{3})*\.\d{2})\s+(\d{1,3}(?:,\d{3})*\.\d{2})$", line.strip())
                     if match:
-                        all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, match.group(1).strip(), match.group(2), match.group(3)])
+                        item_texto = match.group(1).strip()
 
-        df = pd.DataFrame(all_rows, columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Valor Asegurado", "Prima Neta"])
+                        # Extraer placa si existe en la línea (SECCION: 006 VEHICULOS)
+                        placa_match = re.search(r"PLACA:\s*([A-Z0-9\-]+)", item_texto, re.IGNORECASE)
+                        placa = placa_match.group(1).strip() if placa_match else ""
+
+                        all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_texto, placa, match.group(2), match.group(3)])
+
+        df = pd.DataFrame(all_rows, columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Placa", "Valor Asegurado", "Prima Neta"])
         st.success("✅ Archivos procesados correctamente")
         st.dataframe(df, use_container_width=True)
 
