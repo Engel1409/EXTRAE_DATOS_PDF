@@ -60,7 +60,8 @@ with tab1:
             for i in range(len(seccion_indices) - 1):
                 sec = seccion_indices[i][1]
                 content = text[seccion_indices[i][0]:seccion_indices[i+1][0]]
-                for line in content.split("\n"):
+                lineas = content.split("\n")
+                for idx, line in enumerate(lineas):
                     match = re.match(r"^(.*?)(\d{1,3}(?:,\d{3})*\.\d{2})\s+(\d{1,3}(?:,\d{3})*\.\d{2})$", line.strip())
                     if match:
                         item_texto = match.group(1).strip()
@@ -69,9 +70,20 @@ with tab1:
                         placa_match = re.search(r"PLACA:\s*([A-Z0-9\-]+)", item_texto, re.IGNORECASE)
                         placa = placa_match.group(1).strip() if placa_match else ""
 
-                        all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_texto, placa, match.group(2), match.group(3)])
+                        # Si hay placa, la marca/modelo/año suelen estar en la línea siguiente
+                        marca = modelo = anio = ""
+                        if placa and idx + 1 < len(lineas):
+                            siguiente = lineas[idx + 1]
+                            marca_match = re.search(r"MARCA:\s*([^,]+)", siguiente, re.IGNORECASE)
+                            modelo_match = re.search(r"MODELO:\s*([^,]+)", siguiente, re.IGNORECASE)
+                            anio_match = re.search(r"A[ÑN]O:\s*(\d{4})", siguiente, re.IGNORECASE)
+                            marca = marca_match.group(1).strip() if marca_match else ""
+                            modelo = modelo_match.group(1).strip() if modelo_match else ""
+                            anio = anio_match.group(1).strip() if anio_match else ""
 
-        df = pd.DataFrame(all_rows, columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Placa", "Valor Asegurado", "Prima Neta"])
+                        all_rows.append([nro_poliza, nombre_cliente, rango_vigencia, sec, item_texto, placa, marca, modelo, anio, match.group(2), match.group(3)])
+
+        df = pd.DataFrame(all_rows, columns=["Póliza", "Cliente", "Vigencia", "Sección", "Ítem", "Placa", "Marca", "Modelo", "Año", "Valor Asegurado", "Prima Neta"])
         st.success("✅ Archivos procesados correctamente")
         st.dataframe(df, use_container_width=True)
 
