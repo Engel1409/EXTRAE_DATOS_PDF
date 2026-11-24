@@ -113,7 +113,7 @@ with tab2:
     V_D_E = 0.03
     V_IGV = 0.18
 
-    usuarios = ["Sofi B", "Engel B", "User_01", "User_02"]
+    usuarios = ["Sofi B", "Micaella P", "Jessica O", "Pamela G"]
     usuario_seleccionado = st.selectbox("Selecciona tu usuario:", usuarios, key="primas_usuario")
 
     fecha_reporte = dt.now().strftime("%d/%m/%Y %H:%M:%S")
